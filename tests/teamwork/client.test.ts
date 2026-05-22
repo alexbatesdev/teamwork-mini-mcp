@@ -1,0 +1,155 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { TeamworkClient } from '../../src/teamwork/client.js';
+
+function mockFetch(body: unknown, init: { status?: number } = {}) {
+  return vi.fn().mockResolvedValue(
+    new Response(JSON.stringify(body), {
+      status: init.status ?? 200,
+      headers: { 'content-type': 'application/json' },
+    }),
+  );
+}
+
+describe('TeamworkClient', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('GETs the task endpoint and returns the raw task object', async () => {
+    const fetchFn = mockFetch({ task: { id: 42, name: 'hi' } });
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    const task = await client.getTask(42);
+
+    expect(task).toEqual({ id: 42, name: 'hi' });
+    expect(fetchFn).toHaveBeenCalledOnce();
+    const [url, init] = fetchFn.mock.calls[0]!;
+    expect(url).toBe('https://example.teamwork.com/projects/api/v3/tasks/42.json');
+    expect(init.method ?? 'GET').toBe('GET');
+  });
+
+  it('sends HTTP Basic auth with the API key as the username', async () => {
+    const fetchFn = mockFetch({ task: { id: 1 } });
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'secret-key',
+      fetch: fetchFn,
+    });
+
+    await client.getTask(1);
+
+    const init = fetchFn.mock.calls[0]![1];
+    const authHeader: string = init.headers.Authorization;
+    expect(authHeader.startsWith('Basic ')).toBe(true);
+    const decoded = Buffer.from(authHeader.slice('Basic '.length), 'base64').toString('utf-8');
+    expect(decoded).toBe('secret-key:');
+  });
+
+  it('normalizes site with protocol or trailing slash', async () => {
+    const fetchFn = mockFetch({ task: { id: 1 } });
+    const client = new TeamworkClient({
+      site: 'https://example.teamwork.com/',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    await client.getTask(1);
+
+    const [url] = fetchFn.mock.calls[0]!;
+    expect(url).toBe('https://example.teamwork.com/projects/api/v3/tasks/1.json');
+  });
+
+  it('throws a useful error on non-2xx responses', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response('Not found', { status: 404 }),
+    );
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    await expect(client.getTask(999)).rejects.toThrow(/404/);
+  });
+
+  it('GETs the subtasks endpoint and returns the raw tasks array', async () => {
+    const fetchFn = mockFetch({ tasks: [{ id: 2 }, { id: 3 }], meta: {} });
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    const subtasks = await client.listSubtasks(1);
+
+    expect(subtasks).toEqual([{ id: 2 }, { id: 3 }]);
+    const [url] = fetchFn.mock.calls[0]!;
+    expect(url).toBe('https://example.teamwork.com/projects/api/v3/tasks/1/subtasks.json');
+  });
+
+  it('searchTasks GETs the tasks list with searchTerm', async () => {
+    const fetchFn = mockFetch({ tasks: [{ id: 7 }], meta: {} });
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    const tasks = await client.searchTasks('amplitude');
+
+    expect(tasks).toEqual([{ id: 7 }]);
+    const [url] = fetchFn.mock.calls[0]!;
+    const u = new URL(url);
+    expect(u.origin + u.pathname).toBe(
+      'https://example.teamwork.com/projects/api/v3/tasks.json',
+    );
+    expect(u.searchParams.get('searchTerm')).toBe('amplitude');
+  });
+
+  it('searchTasks defaults to a small pageSize', async () => {
+    const fetchFn = mockFetch({ tasks: [], meta: {} });
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    await client.searchTasks('x');
+
+    const [url] = fetchFn.mock.calls[0]!;
+    expect(new URL(url).searchParams.get('pageSize')).toBe('25');
+  });
+
+  it('searchTasks allows overriding pageSize', async () => {
+    const fetchFn = mockFetch({ tasks: [], meta: {} });
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    await client.searchTasks('x', { pageSize: 5 });
+
+    const [url] = fetchFn.mock.calls[0]!;
+    expect(new URL(url).searchParams.get('pageSize')).toBe('5');
+  });
+
+  it('searchTasks url-encodes terms with special characters', async () => {
+    const fetchFn = mockFetch({ tasks: [], meta: {} });
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    await client.searchTasks('foo bar & baz');
+
+    const [url] = fetchFn.mock.calls[0]!;
+    expect(new URL(url).searchParams.get('searchTerm')).toBe('foo bar & baz');
+  });
+});
