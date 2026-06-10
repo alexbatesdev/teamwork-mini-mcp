@@ -6,7 +6,7 @@ A minimal [MCP](https://modelcontextprotocol.io) server for Teamwork Projects. I
 
 | Tool | Description |
 | --- | --- |
-| `get_task` | Fetch a single task by id |
+| `get_task` | Fetch a single task by id, including its comments (most recent 20 by default; raise with `commentLimit`, max 200) |
 | `list_subtasks` | List the direct subtasks of a task |
 | `search_tasks` | Search tasks by title/description text (default 25 results, max 100) |
 

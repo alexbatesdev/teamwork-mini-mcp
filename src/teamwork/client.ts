@@ -1,3 +1,4 @@
+import type { RawTeamworkComment } from '../projections/comment.js';
 import type { RawTeamworkTask } from '../projections/task.js';
 
 export interface TeamworkClientOptions {
@@ -20,6 +21,28 @@ export class TeamworkClient {
   async getTask(id: number): Promise<RawTeamworkTask> {
     const body = await this.get<{ task: RawTeamworkTask }>(`/projects/api/v3/tasks/${id}.json`);
     return body.task;
+  }
+
+  /**
+   * Fetch a task's comments, newest first, capped at `limit`. Returns the
+   * fetched page alongside `total` (the full comment count reported by the API)
+   * so callers can tell how many were omitted by the cap.
+   */
+  async getTaskComments(
+    id: number,
+    opts: { limit?: number } = {},
+  ): Promise<{ comments: RawTeamworkComment[]; total: number }> {
+    const params = new URLSearchParams({
+      pageSize: String(opts.limit ?? 20),
+      orderBy: 'date',
+      orderMode: 'desc',
+    });
+    const body = await this.get<{
+      comments: RawTeamworkComment[];
+      meta?: { page?: { count?: number } };
+    }>(`/projects/api/v3/tasks/${id}/comments.json?${params.toString()}`);
+    const comments = body.comments ?? [];
+    return { comments, total: body.meta?.page?.count ?? comments.length };
   }
 
   async listSubtasks(id: number): Promise<RawTeamworkTask[]> {

@@ -1,0 +1,22 @@
+{
+  "comments": [
+    {
+      "id": 9002,
+      "body": "Latest update: SDK wired in, verifying events flow through.",
+      "contentType": "TEXT",
+      "userId": 643631,
+      "dateCreated": "2026-05-19T14:30:00Z",
+      "dateLastEdited": "2026-05-19T14:45:00Z"
+    },
+    {
+      "id": 9001,
+      "body": "Kicking this off — see the implementation docs linked in the description.",
+      "contentType": "TEXT",
+      "userId": 610193,
+      "dateCreated": "2026-03-18T09:00:00Z",
+      "dateLastEdited": null
+    }
+  ],
+  "meta": { "page": { "count": 7 } },
+  "included": {}
+}

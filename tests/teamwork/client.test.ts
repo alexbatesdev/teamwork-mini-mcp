@@ -92,6 +92,44 @@ describe('TeamworkClient', () => {
     expect(url).toBe('https://example.teamwork.com/projects/api/v3/tasks/1/subtasks.json');
   });
 
+  it('getTaskComments GETs the comments endpoint newest-first and reports the total', async () => {
+    const fetchFn = mockFetch({
+      comments: [{ id: 2 }, { id: 1 }],
+      meta: { page: { count: 7 } },
+    });
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    const result = await client.getTaskComments(1, { limit: 5 });
+
+    expect(result).toEqual({ comments: [{ id: 2 }, { id: 1 }], total: 7 });
+    const [url] = fetchFn.mock.calls[0]!;
+    const u = new URL(url);
+    expect(u.origin + u.pathname).toBe(
+      'https://example.teamwork.com/projects/api/v3/tasks/1/comments.json',
+    );
+    expect(u.searchParams.get('pageSize')).toBe('5');
+    expect(u.searchParams.get('orderMode')).toBe('desc');
+  });
+
+  it('getTaskComments defaults to a limit of 20 and falls back to the page length when no total is given', async () => {
+    const fetchFn = mockFetch({ comments: [{ id: 1 }] });
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    const result = await client.getTaskComments(1);
+
+    expect(result.total).toBe(1);
+    const [url] = fetchFn.mock.calls[0]!;
+    expect(new URL(url).searchParams.get('pageSize')).toBe('20');
+  });
+
   it('searchTasks GETs the tasks list with searchTerm', async () => {
     const fetchFn = mockFetch({ tasks: [{ id: 7 }], meta: {} });
     const client = new TeamworkClient({

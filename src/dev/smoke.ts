@@ -23,6 +23,11 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(task, null, 2));
   const taskSize = JSON.stringify(task).length;
 
+  console.log(`\n--- comments(${taskId}) ---`);
+  const { comments, total } = await client.getTaskComments(taskId, { limit: 5 });
+  console.log(`${total} comment(s) total; raw shape of first (verify field names):`);
+  if (comments.length > 0) console.log(JSON.stringify(comments[0], null, 2));
+
   console.log(`\n--- list_subtasks(${taskId}) ---`);
   const subs = (await client.listSubtasks(taskId)).map(projectTask);
   console.log(`${subs.length} subtask(s)`);

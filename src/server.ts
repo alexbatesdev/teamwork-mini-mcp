@@ -48,7 +48,11 @@ async function main(): Promise<void> {
     'get_task',
     {
       description:
-        'Fetch a single Teamwork task by id. Returns only the essential fields (no permissions, workflow stages, follower lists, etc.) to keep context lean.',
+        'Fetch a single Teamwork task by id, including its comments (most recent ' +
+        '20 by default; raise with commentLimit, max 200). Comments are returned ' +
+        'chronologically with omittedCommentCount noting any dropped by the limit. ' +
+        'Returns only the essential task fields (no permissions, workflow stages, ' +
+        'follower lists, etc.) to keep context lean.',
       inputSchema: getTaskInputSchema.shape,
     },
     async (input) => asText(await getTask(input)),
