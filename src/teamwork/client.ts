@@ -45,11 +45,30 @@ export class TeamworkClient {
     return { comments, total: body.meta?.page?.count ?? comments.length };
   }
 
+  /**
+   * Fetch all direct subtasks of a task. The v3 subtasks endpoint is itself
+   * paged, so we walk pages (largest page size we use anywhere) until exhausted
+   * to return the complete set — callers higher up depend on an accurate count.
+   */
   async listSubtasks(id: number): Promise<RawTeamworkTask[]> {
-    const body = await this.get<{ tasks: RawTeamworkTask[] }>(
-      `/projects/api/v3/tasks/${id}/subtasks.json`,
-    );
-    return body.tasks;
+    const pageSize = 250;
+    const all: RawTeamworkTask[] = [];
+    for (let page = 1; ; page++) {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+      });
+      const body = await this.get<{
+        tasks: RawTeamworkTask[];
+        meta?: { page?: { hasMore?: boolean } };
+      }>(`/projects/api/v3/tasks/${id}/subtasks.json?${params.toString()}`);
+      const tasks = body.tasks ?? [];
+      all.push(...tasks);
+      // Stop on an explicit hasMore=false, or when the page wasn't full.
+      const hasMore = body.meta?.page?.hasMore;
+      if (hasMore === false || tasks.length < pageSize) break;
+    }
+    return all;
   }
 
   async searchTasks(

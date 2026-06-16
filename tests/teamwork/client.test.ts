@@ -88,8 +88,43 @@ describe('TeamworkClient', () => {
     const subtasks = await client.listSubtasks(1);
 
     expect(subtasks).toEqual([{ id: 2 }, { id: 3 }]);
+    expect(fetchFn).toHaveBeenCalledOnce();
     const [url] = fetchFn.mock.calls[0]!;
-    expect(url).toBe('https://example.teamwork.com/projects/api/v3/tasks/1/subtasks.json');
+    const u = new URL(url);
+    expect(u.origin + u.pathname).toBe(
+      'https://example.teamwork.com/projects/api/v3/tasks/1/subtasks.json',
+    );
+    expect(u.searchParams.get('page')).toBe('1');
+  });
+
+  it('listSubtasks walks pages until a page comes back short and concatenates them', async () => {
+    const fullPage = Array.from({ length: 250 }, (_, i) => ({ id: i + 1 }));
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ tasks: fullPage, meta: { page: { hasMore: true } } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ tasks: [{ id: 251 }], meta: { page: { hasMore: false } } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    const subtasks = await client.listSubtasks(1);
+
+    expect(subtasks).toHaveLength(251);
+    expect(subtasks[250]).toEqual({ id: 251 });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(new URL(fetchFn.mock.calls[1]![0]).searchParams.get('page')).toBe('2');
   });
 
   it('getTaskComments GETs the comments endpoint newest-first and reports the total', async () => {

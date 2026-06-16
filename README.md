@@ -1,14 +1,23 @@
 # teamwork-mini-mcp
 
-A minimal [MCP](https://modelcontextprotocol.io) server for Teamwork Projects. It exposes three read-only tools that return tasks in a slim shape (essential fields only — no permissions, workflow stages, follower lists, etc.) to keep LLM context lean.
+A minimal [MCP](https://modelcontextprotocol.io) server for Teamwork Projects. It exposes two read-only tools that return tasks in a slim shape (essential fields only — no permissions, workflow stages, follower lists, etc.) to keep LLM context lean.
 
 ## Tools
 
 | Tool | Description |
 | --- | --- |
-| `get_task` | Fetch a single task by id, including its comments (most recent 20 by default; raise with `commentLimit`, max 200) |
-| `list_subtasks` | List the direct subtasks of a task |
+| `get_task` | Fetch a single task by id, including its comments and subtasks (see below) |
 | `search_tasks` | Search tasks by title/description text (default 25 results, max 100) |
+
+### `get_task` subtasks
+
+`get_task` also walks the task's subtasks:
+
+- `subtaskDepth` (default `1`, max `5`) — how many levels to fetch. `1` returns direct subtasks, `2` also their subtasks, `0` none.
+- Subtasks come back as a **flat, breadth-first `subtasks` list**, each entry tagged with `depth` and carrying `parentTaskId`, so the hierarchy can be rebuilt.
+- The list is paginated with `subtaskPageSize` (default `20`, max `200`) and `subtaskPage` (1-based). The response's `subtaskPage` object reports `{ depth, page, pageSize, total, returned, hasMore }`.
+
+Comments are the most recent 20 by default (raise with `commentLimit`, max 200), returned chronologically with `omittedCommentCount` noting any dropped by the limit.
 
 ## Requirements
 

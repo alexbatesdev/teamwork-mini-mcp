@@ -14,10 +14,6 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { TeamworkClient } from './teamwork/client.js';
 import { createGetTaskHandler, getTaskInputSchema } from './tools/get-task.js';
 import {
-  createListSubtasksHandler,
-  listSubtasksInputSchema,
-} from './tools/list-subtasks.js';
-import {
   createSearchTasksHandler,
   searchTasksInputSchema,
 } from './tools/search-tasks.js';
@@ -37,7 +33,6 @@ async function main(): Promise<void> {
   const server = new McpServer({ name: 'teamwork-mini', version: '0.0.1' });
 
   const getTask = createGetTaskHandler(client);
-  const listSubtasks = createListSubtasksHandler(client);
   const searchTasks = createSearchTasksHandler(client);
 
   const asText = (value: unknown) => ({
@@ -51,21 +46,16 @@ async function main(): Promise<void> {
         'Fetch a single Teamwork task by id, including its comments (most recent ' +
         '20 by default; raise with commentLimit, max 200). Comments are returned ' +
         'chronologically with omittedCommentCount noting any dropped by the limit. ' +
-        'Returns only the essential task fields (no permissions, workflow stages, ' +
-        'follower lists, etc.) to keep context lean.',
+        'Also walks the task\'s subtasks: subtaskDepth (default 1, max 5) controls how ' +
+        'many levels are fetched (1 = direct subtasks, 2 = their subtasks too, 0 = none). ' +
+        'Subtasks come back as a flat, breadth-first list, each tagged with its depth and ' +
+        'carrying parentTaskId so the tree can be rebuilt. The list is paginated via ' +
+        'subtaskPageSize (default 20, max 200) and subtaskPage (1-based); the subtaskPage ' +
+        'metadata reports total/returned/hasMore. Returns only the essential task fields ' +
+        '(no permissions, workflow stages, follower lists, etc.) to keep context lean.',
       inputSchema: getTaskInputSchema.shape,
     },
     async (input) => asText(await getTask(input)),
-  );
-
-  server.registerTool(
-    'list_subtasks',
-    {
-      description:
-        'List the direct subtasks of a given Teamwork task. Returns each subtask in the same slim shape as get_task. Empty array when the task has no subtasks.',
-      inputSchema: listSubtasksInputSchema.shape,
-    },
-    async (input) => asText(await listSubtasks(input)),
   );
 
   server.registerTool(

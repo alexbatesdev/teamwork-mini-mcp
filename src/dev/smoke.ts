@@ -28,9 +28,9 @@ async function main(): Promise<void> {
   console.log(`${total} comment(s) total; raw shape of first (verify field names):`);
   if (comments.length > 0) console.log(JSON.stringify(comments[0], null, 2));
 
-  console.log(`\n--- list_subtasks(${taskId}) ---`);
+  console.log(`\n--- subtasks(${taskId}) ---`);
   const subs = (await client.listSubtasks(taskId)).map(projectTask);
-  console.log(`${subs.length} subtask(s)`);
+  console.log(`${subs.length} direct subtask(s)`);
   if (subs.length > 0) console.log(JSON.stringify(subs[0], null, 2));
 
   console.log(`\n--- search_tasks(${JSON.stringify(query)}) ---`);
