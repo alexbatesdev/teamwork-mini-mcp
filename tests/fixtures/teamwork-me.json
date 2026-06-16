@@ -1,0 +1,22 @@
+{
+  "person": {
+    "id": 643631,
+    "firstName": "Alex",
+    "lastName": "Bates",
+    "title": "",
+    "email": "alex.bates@builtapp.com",
+    "companyId": 204144,
+    "companyRoleId": 5,
+    "isAdmin": false,
+    "isClientUser": false,
+    "isServiceAccount": false,
+    "type": "account",
+    "userType": "account",
+    "deleted": false,
+    "avatarUrl": "https://s3.amazonaws.com/TWFiles/809990/userAvatar/tf_34a2bb73.pfp_crop.jpg",
+    "timezone": "America/Toronto",
+    "lastLogin": "2026-06-16T18:08:58Z",
+    "createdAt": "2025-07-07T16:17:48Z",
+    "updatedAt": "2026-06-15T21:08:29Z"
+  }
+}

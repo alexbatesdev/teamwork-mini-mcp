@@ -1,6 +1,6 @@
 # teamwork-mini-mcp
 
-A minimal [MCP](https://modelcontextprotocol.io) server for Teamwork Projects. It exposes two read-only tools that return tasks in a slim shape (essential fields only — no permissions, workflow stages, follower lists, etc.) to keep LLM context lean.
+A minimal [MCP](https://modelcontextprotocol.io) server for Teamwork Projects. It exposes read-only tools that return data in a slim shape (essential fields only — no permissions, workflow stages, follower lists, etc.) to keep LLM context lean.
 
 ## Tools
 
@@ -8,6 +8,7 @@ A minimal [MCP](https://modelcontextprotocol.io) server for Teamwork Projects. I
 | --- | --- |
 | `get_task` | Fetch a single task by id, including its comments and subtasks (see below) |
 | `search_tasks` | Search tasks by title/description text (default 25 results, max 100) |
+| `get_current_user` | Return the user the configured API key authenticates as (takes no arguments) |
 
 ### `get_task` subtasks
 

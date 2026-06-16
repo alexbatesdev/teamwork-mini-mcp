@@ -2,6 +2,7 @@ import 'dotenv/config';
 
 import { TeamworkClient } from '../teamwork/client.js';
 import { projectTask } from '../projections/task.js';
+import { projectUser } from '../projections/user.js';
 
 function requireEnv(name: string): string {
   const v = process.env[name];
@@ -37,6 +38,10 @@ async function main(): Promise<void> {
   const hits = (await client.searchTasks(query, { pageSize: 5 })).map(projectTask);
   console.log(`${hits.length} match(es); first:`);
   if (hits.length > 0) console.log(JSON.stringify(hits[0], null, 2));
+
+  console.log(`\n--- get_current_user ---`);
+  const me = projectUser(await client.getCurrentUser());
+  console.log(JSON.stringify(me, null, 2));
 
   console.log(`\nSlim task payload size: ${taskSize} bytes`);
 }

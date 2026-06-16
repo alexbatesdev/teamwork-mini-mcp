@@ -225,4 +225,20 @@ describe('TeamworkClient', () => {
     const [url] = fetchFn.mock.calls[0]!;
     expect(new URL(url).searchParams.get('searchTerm')).toBe('foo bar & baz');
   });
+
+  it('getCurrentUser GETs the me endpoint and returns the raw person object', async () => {
+    const fetchFn = mockFetch({ person: { id: 643631, firstName: 'Alex' } });
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    const person = await client.getCurrentUser();
+
+    expect(person).toEqual({ id: 643631, firstName: 'Alex' });
+    expect(fetchFn).toHaveBeenCalledOnce();
+    const [url] = fetchFn.mock.calls[0]!;
+    expect(url).toBe('https://example.teamwork.com/projects/api/v3/me.json');
+  });
 });

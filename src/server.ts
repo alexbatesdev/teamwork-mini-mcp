@@ -12,6 +12,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { TeamworkClient } from './teamwork/client.js';
+import {
+  createGetCurrentUserHandler,
+  getCurrentUserInputSchema,
+} from './tools/get-current-user.js';
 import { createGetTaskHandler, getTaskInputSchema } from './tools/get-task.js';
 import {
   createSearchTasksHandler,
@@ -34,6 +38,7 @@ async function main(): Promise<void> {
 
   const getTask = createGetTaskHandler(client);
   const searchTasks = createSearchTasksHandler(client);
+  const getCurrentUser = createGetCurrentUserHandler(client);
 
   const asText = (value: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
@@ -66,6 +71,18 @@ async function main(): Promise<void> {
       inputSchema: searchTasksInputSchema.shape,
     },
     async (input) => asText(await searchTasks(input)),
+  );
+
+  server.registerTool(
+    'get_current_user',
+    {
+      description:
+        'Return the Teamwork user that the configured API key authenticates as ' +
+        '(the "me" identity). Takes no arguments. Returns essential identity fields ' +
+        '(id, name, email, title, company, role flags, timezone, timestamps) in a slim shape.',
+      inputSchema: getCurrentUserInputSchema.shape,
+    },
+    async (input) => asText(await getCurrentUser(input)),
   );
 
   await server.connect(new StdioServerTransport());

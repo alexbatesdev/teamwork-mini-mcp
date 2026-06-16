@@ -1,5 +1,6 @@
 import type { RawTeamworkComment } from '../projections/comment.js';
 import type { RawTeamworkTask } from '../projections/task.js';
+import type { RawTeamworkPerson } from '../projections/user.js';
 
 export interface TeamworkClientOptions {
   site: string;
@@ -83,6 +84,12 @@ export class TeamworkClient {
       `/projects/api/v3/tasks.json?${params.toString()}`,
     );
     return body.tasks;
+  }
+
+  /** Fetch the user the API key authenticates as. */
+  async getCurrentUser(): Promise<RawTeamworkPerson> {
+    const body = await this.get<{ person: RawTeamworkPerson }>('/projects/api/v3/me.json');
+    return body.person;
   }
 
   private async get<T>(path: string): Promise<T> {
