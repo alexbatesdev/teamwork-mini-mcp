@@ -77,6 +77,51 @@ describe('TeamworkClient', () => {
     await expect(client.getTask(999)).rejects.toThrow(/404/);
   });
 
+  it('surfaces the underlying reason when fetch fails at the network level', async () => {
+    // Mirror what Node's fetch throws: a generic "fetch failed" with the real
+    // reason tucked into `cause`.
+    const cause = Object.assign(new Error('getaddrinfo ENOTFOUND example.teamwork.com'), {
+      code: 'ENOTFOUND',
+    });
+    const fetchFn = vi.fn().mockRejectedValue(
+      Object.assign(new TypeError('fetch failed'), { cause }),
+    );
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    await expect(client.getTask(1)).rejects.toThrow(/ENOTFOUND/);
+    await expect(client.getTask(1)).rejects.toThrow(
+      /example\.teamwork\.com\/projects\/api\/v3\/tasks\/1\.json/,
+    );
+  });
+
+  it('unpacks per-IP reasons from an AggregateError (multi-IP firewall block)', async () => {
+    // A Cloudflare-fronted host resolves to several IPs; when a sandbox firewall
+    // blocks every connect, Node's fetch throws "fetch failed" whose cause is an
+    // AggregateError with an EMPTY message — the real reasons live in `errors`.
+    const cause = Object.assign(new AggregateError([
+      Object.assign(new Error('connect EPERM 104.16.0.1:443'), { code: 'EPERM' }),
+      Object.assign(new Error('connect EPERM 104.16.0.2:443'), { code: 'EPERM' }),
+    ]), { message: '' });
+    const fetchFn = vi.fn().mockRejectedValue(
+      Object.assign(new TypeError('fetch failed'), { cause }),
+    );
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    // The bare "fetch failed" must NOT be all the caller sees.
+    const err = await client.getTask(1).catch((e: Error) => e);
+    expect(err.message).toMatch(/EPERM/);
+    expect(err.message).toMatch(/104\.16\.0\.1:443/);
+    expect(err.message).not.toBe('fetch failed');
+  });
+
   it('GETs the subtasks endpoint and returns the raw tasks array', async () => {
     const fetchFn = mockFetch({ tasks: [{ id: 2 }, { id: 3 }], meta: {} });
     const client = new TeamworkClient({

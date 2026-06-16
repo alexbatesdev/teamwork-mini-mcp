@@ -94,19 +94,70 @@ export class TeamworkClient {
 
   private async get<T>(path: string): Promise<T> {
     const url = `${this.baseUrl}${path}`;
-    const res = await this.fetchFn(url, {
-      method: 'GET',
-      headers: {
-        Authorization: this.authHeader,
-        Accept: 'application/json',
-      },
-    });
+    let res: Response;
+    try {
+      res = await this.fetchFn(url, {
+        method: 'GET',
+        headers: {
+          Authorization: this.authHeader,
+          Accept: 'application/json',
+        },
+      });
+    } catch (err) {
+      // A rejection here is a network-level failure (DNS, connection refused,
+      // TLS, timeout), not an HTTP status. fetch reports these as a generic
+      // "fetch failed" and hides the real reason in `cause`, so surface it.
+      throw new Error(`Teamwork request to ${this.baseUrl}${path} failed: ${describeFetchError(err)}`, {
+        cause: err,
+      });
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(`Teamwork ${res.status} for ${path}: ${text.slice(0, 200)}`);
     }
     return (await res.json()) as T;
   }
+}
+
+/**
+ * Build a human-readable reason from a thrown fetch error. Node's fetch wraps
+ * the underlying network error as `cause`; that's where the actionable detail
+ * lives (e.g. ENOTFOUND for a bad site, ECONNREFUSED/EPERM/ETIMEDOUT for a
+ * firewall blocking the connect, certificate errors).
+ *
+ * When the host resolves to several IPs (e.g. a Cloudflare-fronted domain) and
+ * every connection attempt fails, `cause` is an AggregateError whose own
+ * message is empty — the per-IP reasons sit in `cause.errors`. We surface those
+ * so a sandbox/firewall block reads as "connect EPERM <ip>:443" rather than a
+ * bare "fetch failed".
+ */
+function describeFetchError(err: unknown): string {
+  const cause = (err as { cause?: unknown })?.cause;
+  const reason = describeReason(cause) || describeReason(err);
+  return reason || 'unknown error';
+}
+
+function describeReason(value: unknown): string {
+  if (value == null) return '';
+
+  // AggregateError (or any error carrying nested errors): describe each one.
+  // De-duplicate because multi-IP failures are usually the same code repeated.
+  const nested = (value as { errors?: unknown })?.errors;
+  if (Array.isArray(nested) && nested.length > 0) {
+    const seen = new Set<string>();
+    for (const e of nested) {
+      const d = describeReason(e);
+      if (d) seen.add(d);
+    }
+    if (seen.size > 0) return [...seen].join('; ');
+  }
+
+  const parts: string[] = [];
+  const code = (value as { code?: unknown })?.code;
+  if (typeof code === 'string' && code) parts.push(code);
+  const message = (value as { message?: unknown })?.message;
+  if (typeof message === 'string' && message) parts.push(message);
+  return parts.join(': ');
 }
 
 function normalizeSite(site: string): string {
