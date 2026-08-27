@@ -16,21 +16,42 @@ describe('TeamworkClient', () => {
     vi.restoreAllMocks();
   });
 
-  it('GETs the task endpoint and returns the raw task object', async () => {
-    const fetchFn = mockFetch({ task: { id: 42, name: 'hi' } });
+  it('GETs the task endpoint with a users sideload and returns the task and users', async () => {
+    const fetchFn = mockFetch({
+      task: { id: 42, name: 'hi' },
+      included: { users: { '7': { id: 7, firstName: 'A', lastName: 'B' } } },
+    });
     const client = new TeamworkClient({
       site: 'example.teamwork.com',
       apiKey: 'k',
       fetch: fetchFn,
     });
 
-    const task = await client.getTask(42);
+    const result = await client.getTask(42);
 
-    expect(task).toEqual({ id: 42, name: 'hi' });
+    expect(result).toEqual({
+      task: { id: 42, name: 'hi' },
+      users: { '7': { id: 7, firstName: 'A', lastName: 'B' } },
+    });
     expect(fetchFn).toHaveBeenCalledOnce();
     const [url, init] = fetchFn.mock.calls[0]!;
-    expect(url).toBe('https://example.teamwork.com/projects/api/v3/tasks/42.json');
+    expect(url).toBe(
+      'https://example.teamwork.com/projects/api/v3/tasks/42.json?include=users',
+    );
     expect(init.method ?? 'GET').toBe('GET');
+  });
+
+  it('getTask returns an empty users map when the response has no sideload', async () => {
+    const fetchFn = mockFetch({ task: { id: 42 } });
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    const result = await client.getTask(42);
+
+    expect(result).toEqual({ task: { id: 42 }, users: {} });
   });
 
   it('sends HTTP Basic auth with the API key as the username', async () => {
@@ -61,7 +82,9 @@ describe('TeamworkClient', () => {
     await client.getTask(1);
 
     const [url] = fetchFn.mock.calls[0]!;
-    expect(url).toBe('https://example.teamwork.com/projects/api/v3/tasks/1.json');
+    expect(url).toBe(
+      'https://example.teamwork.com/projects/api/v3/tasks/1.json?include=users',
+    );
   });
 
   it('throws a useful error on non-2xx responses', async () => {
@@ -122,17 +145,22 @@ describe('TeamworkClient', () => {
     expect(err.message).not.toBe('fetch failed');
   });
 
-  it('GETs the subtasks endpoint and returns the raw tasks array', async () => {
-    const fetchFn = mockFetch({ tasks: [{ id: 2 }, { id: 3 }], meta: {} });
+  it('GETs the subtasks endpoint with a users sideload and returns tasks and users', async () => {
+    const fetchFn = mockFetch({
+      tasks: [{ id: 2 }, { id: 3 }],
+      included: { users: { '7': { id: 7, firstName: 'A', lastName: 'B' } } },
+      meta: {},
+    });
     const client = new TeamworkClient({
       site: 'example.teamwork.com',
       apiKey: 'k',
       fetch: fetchFn,
     });
 
-    const subtasks = await client.listSubtasks(1);
+    const result = await client.listSubtasks(1);
 
-    expect(subtasks).toEqual([{ id: 2 }, { id: 3 }]);
+    expect(result.tasks).toEqual([{ id: 2 }, { id: 3 }]);
+    expect(result.users).toEqual({ '7': { id: 7, firstName: 'A', lastName: 'B' } });
     expect(fetchFn).toHaveBeenCalledOnce();
     const [url] = fetchFn.mock.calls[0]!;
     const u = new URL(url);
@@ -140,23 +168,32 @@ describe('TeamworkClient', () => {
       'https://example.teamwork.com/projects/api/v3/tasks/1/subtasks.json',
     );
     expect(u.searchParams.get('page')).toBe('1');
+    expect(u.searchParams.get('include')).toBe('users');
   });
 
-  it('listSubtasks walks pages until a page comes back short and concatenates them', async () => {
+  it('listSubtasks walks pages until a page comes back short, concatenating tasks and merging users', async () => {
     const fullPage = Array.from({ length: 250 }, (_, i) => ({ id: i + 1 }));
     const fetchFn = vi
       .fn()
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ tasks: fullPage, meta: { page: { hasMore: true } } }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
+        new Response(
+          JSON.stringify({
+            tasks: fullPage,
+            included: { users: { '1': { id: 1, firstName: 'A', lastName: 'A' } } },
+            meta: { page: { hasMore: true } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ tasks: [{ id: 251 }], meta: { page: { hasMore: false } } }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
+        new Response(
+          JSON.stringify({
+            tasks: [{ id: 251 }],
+            included: { users: { '2': { id: 2, firstName: 'B', lastName: 'B' } } },
+            meta: { page: { hasMore: false } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
       );
     const client = new TeamworkClient({
       site: 'example.teamwork.com',
@@ -164,10 +201,11 @@ describe('TeamworkClient', () => {
       fetch: fetchFn,
     });
 
-    const subtasks = await client.listSubtasks(1);
+    const result = await client.listSubtasks(1);
 
-    expect(subtasks).toHaveLength(251);
-    expect(subtasks[250]).toEqual({ id: 251 });
+    expect(result.tasks).toHaveLength(251);
+    expect(result.tasks[250]).toEqual({ id: 251 });
+    expect(Object.keys(result.users).sort()).toEqual(['1', '2']);
     expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(new URL(fetchFn.mock.calls[1]![0]).searchParams.get('page')).toBe('2');
   });
@@ -210,23 +248,29 @@ describe('TeamworkClient', () => {
     expect(new URL(url).searchParams.get('pageSize')).toBe('20');
   });
 
-  it('searchTasks GETs the tasks list with searchTerm', async () => {
-    const fetchFn = mockFetch({ tasks: [{ id: 7 }], meta: {} });
+  it('searchTasks GETs the tasks list with searchTerm and a users sideload', async () => {
+    const fetchFn = mockFetch({
+      tasks: [{ id: 7 }],
+      included: { users: { '7': { id: 7, firstName: 'A', lastName: 'B' } } },
+      meta: {},
+    });
     const client = new TeamworkClient({
       site: 'example.teamwork.com',
       apiKey: 'k',
       fetch: fetchFn,
     });
 
-    const tasks = await client.searchTasks('amplitude');
+    const result = await client.searchTasks('amplitude');
 
-    expect(tasks).toEqual([{ id: 7 }]);
+    expect(result.tasks).toEqual([{ id: 7 }]);
+    expect(result.users).toEqual({ '7': { id: 7, firstName: 'A', lastName: 'B' } });
     const [url] = fetchFn.mock.calls[0]!;
     const u = new URL(url);
     expect(u.origin + u.pathname).toBe(
       'https://example.teamwork.com/projects/api/v3/tasks.json',
     );
     expect(u.searchParams.get('searchTerm')).toBe('amplitude');
+    expect(u.searchParams.get('include')).toBe('users');
   });
 
   it('searchTasks defaults to a small pageSize', async () => {
@@ -269,6 +313,72 @@ describe('TeamworkClient', () => {
 
     const [url] = fetchFn.mock.calls[0]!;
     expect(new URL(url).searchParams.get('searchTerm')).toBe('foo bar & baz');
+  });
+
+  it('listTasksAssignedTo GETs the tasks list filtered by responsiblePartyIds, open tasks only by default', async () => {
+    const fetchFn = mockFetch({ tasks: [{ id: 5 }], meta: { page: { hasMore: false } } });
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    const result = await client.listTasksAssignedTo(643631);
+
+    expect(result).toEqual({ tasks: [{ id: 5 }], users: {} });
+    const [url] = fetchFn.mock.calls[0]!;
+    const u = new URL(url);
+    expect(u.origin + u.pathname).toBe(
+      'https://example.teamwork.com/projects/api/v3/tasks.json',
+    );
+    expect(u.searchParams.get('responsiblePartyIds')).toBe('643631');
+    expect(u.searchParams.get('include')).toBe('users');
+    expect(u.searchParams.get('includeCompletedTasks')).toBeNull();
+  });
+
+  it('listTasksAssignedTo requests completed tasks when includeCompleted is set', async () => {
+    const fetchFn = mockFetch({ tasks: [], meta: { page: { hasMore: false } } });
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    await client.listTasksAssignedTo(643631, { includeCompleted: true });
+
+    const [url] = fetchFn.mock.calls[0]!;
+    expect(new URL(url).searchParams.get('includeCompletedTasks')).toBe('true');
+  });
+
+  it('listTasksAssignedTo walks all pages into one flat array', async () => {
+    const fullPage = Array.from({ length: 250 }, (_, i) => ({ id: i + 1 }));
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ tasks: fullPage, meta: { page: { hasMore: true } } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ tasks: [{ id: 251 }], meta: { page: { hasMore: false } } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    const client = new TeamworkClient({
+      site: 'example.teamwork.com',
+      apiKey: 'k',
+      fetch: fetchFn,
+    });
+
+    const result = await client.listTasksAssignedTo(1);
+
+    expect(result.tasks).toHaveLength(251);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    const secondUrl = new URL(fetchFn.mock.calls[1]![0]);
+    expect(secondUrl.searchParams.get('page')).toBe('2');
+    expect(secondUrl.searchParams.get('responsiblePartyIds')).toBe('1');
   });
 
   it('getCurrentUser GETs the me endpoint and returns the raw person object', async () => {

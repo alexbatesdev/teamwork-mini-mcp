@@ -20,7 +20,8 @@ async function main(): Promise<void> {
   const query = process.argv[3] ?? 'amplitude';
 
   console.log(`\n--- get_task(${taskId}) ---`);
-  const task = projectTask(await client.getTask(taskId));
+  const taskResult = await client.getTask(taskId);
+  const task = projectTask(taskResult.task, taskResult.users);
   console.log(JSON.stringify(task, null, 2));
   const taskSize = JSON.stringify(task).length;
 
@@ -30,18 +31,26 @@ async function main(): Promise<void> {
   if (comments.length > 0) console.log(JSON.stringify(comments[0], null, 2));
 
   console.log(`\n--- subtasks(${taskId}) ---`);
-  const subs = (await client.listSubtasks(taskId)).map(projectTask);
+  const subtasksResult = await client.listSubtasks(taskId);
+  const subs = subtasksResult.tasks.map((t) => projectTask(t, subtasksResult.users));
   console.log(`${subs.length} direct subtask(s)`);
   if (subs.length > 0) console.log(JSON.stringify(subs[0], null, 2));
 
   console.log(`\n--- search_tasks(${JSON.stringify(query)}) ---`);
-  const hits = (await client.searchTasks(query, { pageSize: 5 })).map(projectTask);
+  const searchResult = await client.searchTasks(query, { pageSize: 5 });
+  const hits = searchResult.tasks.map((t) => projectTask(t, searchResult.users));
   console.log(`${hits.length} match(es); first:`);
   if (hits.length > 0) console.log(JSON.stringify(hits[0], null, 2));
 
   console.log(`\n--- get_current_user ---`);
   const me = projectUser(await client.getCurrentUser());
   console.log(JSON.stringify(me, null, 2));
+
+  console.log(`\n--- list_my_tasks ---`);
+  const mine = await client.listTasksAssignedTo(me.id);
+  const myTasks = mine.tasks.map((t) => projectTask(t, mine.users));
+  console.log(`${myTasks.length} open task(s) assigned to me`);
+  if (myTasks.length > 0) console.log(JSON.stringify(myTasks[0], null, 2));
 
   console.log(`\nSlim task payload size: ${taskSize} bytes`);
 }

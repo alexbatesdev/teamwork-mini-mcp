@@ -17,7 +17,14 @@ const commentsFixture = JSON.parse(
 function fakeClient(overrides: Partial<TeamworkClient>): TeamworkClient {
   // Default listSubtasks to an empty list so tests that don't care about
   // subtasks still exercise the (depth=1) traversal without extra setup.
-  return { listSubtasks: async () => [], ...overrides } as unknown as TeamworkClient;
+  return {
+    listSubtasks: async () => ({ tasks: [], users: {} }),
+    ...overrides,
+  } as unknown as TeamworkClient;
+}
+
+function taskResult(task: unknown) {
+  return { task, users: {} };
 }
 
 function commentsResult() {
@@ -29,7 +36,7 @@ function commentsResult() {
 
 describe('get_task handler', () => {
   it('calls client.getTask and getTaskComments with the provided id', async () => {
-    const getTask = vi.fn().mockResolvedValue(rawTask);
+    const getTask = vi.fn().mockResolvedValue(taskResult(rawTask));
     const getTaskComments = vi.fn().mockResolvedValue(commentsResult());
     const handler = createGetTaskHandler(fakeClient({ getTask, getTaskComments }));
 
@@ -40,7 +47,7 @@ describe('get_task handler', () => {
   });
 
   it('passes a custom commentLimit through to the client', async () => {
-    const getTask = vi.fn().mockResolvedValue(rawTask);
+    const getTask = vi.fn().mockResolvedValue(taskResult(rawTask));
     const getTaskComments = vi.fn().mockResolvedValue(commentsResult());
     const handler = createGetTaskHandler(fakeClient({ getTask, getTaskComments }));
 
@@ -50,7 +57,7 @@ describe('get_task handler', () => {
   });
 
   it('returns the slim projection of the task', async () => {
-    const getTask = vi.fn().mockResolvedValue(rawTask);
+    const getTask = vi.fn().mockResolvedValue(taskResult(rawTask));
     const getTaskComments = vi.fn().mockResolvedValue(commentsResult());
     const handler = createGetTaskHandler(fakeClient({ getTask, getTaskComments }));
 
@@ -63,7 +70,7 @@ describe('get_task handler', () => {
   });
 
   it('includes comments in chronological order with the omitted count', async () => {
-    const getTask = vi.fn().mockResolvedValue(rawTask);
+    const getTask = vi.fn().mockResolvedValue(taskResult(rawTask));
     const getTaskComments = vi.fn().mockResolvedValue(commentsResult());
     const handler = createGetTaskHandler(fakeClient({ getTask, getTaskComments }));
 
@@ -75,7 +82,7 @@ describe('get_task handler', () => {
   });
 
   it('reports zero omitted comments when all are returned', async () => {
-    const getTask = vi.fn().mockResolvedValue(rawTask);
+    const getTask = vi.fn().mockResolvedValue(taskResult(rawTask));
     const getTaskComments = vi
       .fn()
       .mockResolvedValue({ comments: commentsFixture.comments, total: 2 });
@@ -96,9 +103,9 @@ describe('get_task subtask traversal', () => {
   });
 
   function subtaskClient(tree: Record<number, ReturnType<typeof sub>[]>) {
-    const getTask = vi.fn().mockResolvedValue(rootTask);
+    const getTask = vi.fn().mockResolvedValue(taskResult(rootTask));
     const getTaskComments = vi.fn().mockResolvedValue(commentsResult());
-    const listSubtasks = vi.fn(async (id: number) => tree[id] ?? []);
+    const listSubtasks = vi.fn(async (id: number) => ({ tasks: tree[id] ?? [], users: {} }));
     return {
       handler: createGetTaskHandler(fakeClient({ getTask, getTaskComments, listSubtasks })),
       listSubtasks,

@@ -1,12 +1,27 @@
 import type { RawTeamworkComment } from '../projections/comment.js';
 import type { RawTeamworkTask } from '../projections/task.js';
-import type { RawTeamworkPerson } from '../projections/user.js';
+import type { RawTeamworkPerson, RawUsersById } from '../projections/user.js';
 
 export interface TeamworkClientOptions {
   site: string;
   apiKey: string;
   fetch?: typeof globalThis.fetch;
 }
+
+/** A task plus the users sideloaded with it (for resolving assignee names). */
+export interface TaskResult {
+  task: RawTeamworkTask;
+  users: RawUsersById;
+}
+
+/** A list of tasks plus the users sideloaded with them. */
+export interface TaskListResult {
+  tasks: RawTeamworkTask[];
+  users: RawUsersById;
+}
+
+/** Page size used when walking a paged endpoint to exhaustion. */
+const FULL_WALK_PAGE_SIZE = 250;
 
 export class TeamworkClient {
   private readonly baseUrl: string;
@@ -19,9 +34,12 @@ export class TeamworkClient {
     this.fetchFn = opts.fetch ?? globalThis.fetch;
   }
 
-  async getTask(id: number): Promise<RawTeamworkTask> {
-    const body = await this.get<{ task: RawTeamworkTask }>(`/projects/api/v3/tasks/${id}.json`);
-    return body.task;
+  async getTask(id: number): Promise<TaskResult> {
+    const body = await this.get<{
+      task: RawTeamworkTask;
+      included?: { users?: RawUsersById };
+    }>(`/projects/api/v3/tasks/${id}.json?include=users`);
+    return { task: body.task, users: body.included?.users ?? {} };
   }
 
   /**
@@ -51,39 +69,79 @@ export class TeamworkClient {
    * paged, so we walk pages (largest page size we use anywhere) until exhausted
    * to return the complete set — callers higher up depend on an accurate count.
    */
-  async listSubtasks(id: number): Promise<RawTeamworkTask[]> {
-    const pageSize = 250;
-    const all: RawTeamworkTask[] = [];
-    for (let page = 1; ; page++) {
+  async listSubtasks(id: number): Promise<TaskListResult> {
+    return this.getAllTaskPages((page) => {
       const params = new URLSearchParams({
         page: String(page),
-        pageSize: String(pageSize),
+        pageSize: String(FULL_WALK_PAGE_SIZE),
+        include: 'users',
       });
-      const body = await this.get<{
-        tasks: RawTeamworkTask[];
-        meta?: { page?: { hasMore?: boolean } };
-      }>(`/projects/api/v3/tasks/${id}/subtasks.json?${params.toString()}`);
-      const tasks = body.tasks ?? [];
-      all.push(...tasks);
-      // Stop on an explicit hasMore=false, or when the page wasn't full.
-      const hasMore = body.meta?.page?.hasMore;
-      if (hasMore === false || tasks.length < pageSize) break;
-    }
-    return all;
+      return `/projects/api/v3/tasks/${id}/subtasks.json?${params.toString()}`;
+    });
   }
 
   async searchTasks(
     query: string,
     opts: { pageSize?: number } = {},
-  ): Promise<RawTeamworkTask[]> {
+  ): Promise<TaskListResult> {
     const params = new URLSearchParams({
       searchTerm: query,
       pageSize: String(opts.pageSize ?? 25),
+      include: 'users',
     });
-    const body = await this.get<{ tasks: RawTeamworkTask[] }>(
-      `/projects/api/v3/tasks.json?${params.toString()}`,
-    );
-    return body.tasks;
+    const body = await this.get<{
+      tasks: RawTeamworkTask[];
+      included?: { users?: RawUsersById };
+    }>(`/projects/api/v3/tasks.json?${params.toString()}`);
+    return { tasks: body.tasks, users: body.included?.users ?? {} };
+  }
+
+  /**
+   * Fetch every task assigned to `userId`, walking pages until exhausted so
+   * the result is the complete flat set. Completed tasks are excluded unless
+   * `includeCompleted` is set (matching the API's default).
+   */
+  async listTasksAssignedTo(
+    userId: number,
+    opts: { includeCompleted?: boolean } = {},
+  ): Promise<TaskListResult> {
+    return this.getAllTaskPages((page) => {
+      const params = new URLSearchParams({
+        // The assignee filter param is responsiblePartyIds — verified against
+        // the live API; the documented-sounding assignedToUserIds is silently
+        // ignored (matches Teamwork's own twapi-go-sdk).
+        responsiblePartyIds: String(userId),
+        page: String(page),
+        pageSize: String(FULL_WALK_PAGE_SIZE),
+        include: 'users',
+      });
+      if (opts.includeCompleted) params.set('includeCompletedTasks', 'true');
+      return `/projects/api/v3/tasks.json?${params.toString()}`;
+    });
+  }
+
+  /**
+   * Walk a paged v3 tasks endpoint until exhausted, concatenating tasks and
+   * merging each page's `included.users` sideload — callers higher up depend
+   * on an accurate, complete set.
+   */
+  private async getAllTaskPages(pathForPage: (page: number) => string): Promise<TaskListResult> {
+    const all: RawTeamworkTask[] = [];
+    const users: RawUsersById = {};
+    for (let page = 1; ; page++) {
+      const body = await this.get<{
+        tasks: RawTeamworkTask[];
+        included?: { users?: RawUsersById };
+        meta?: { page?: { hasMore?: boolean } };
+      }>(pathForPage(page));
+      const tasks = body.tasks ?? [];
+      all.push(...tasks);
+      Object.assign(users, body.included?.users);
+      // Stop on an explicit hasMore=false, or when the page wasn't full.
+      const hasMore = body.meta?.page?.hasMore;
+      if (hasMore === false || tasks.length < FULL_WALK_PAGE_SIZE) break;
+    }
+    return { tasks: all, users };
   }
 
   /** Fetch the user the API key authenticates as. */

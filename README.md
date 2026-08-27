@@ -8,7 +8,10 @@ A minimal [MCP](https://modelcontextprotocol.io) server for Teamwork Projects. I
 | --- | --- |
 | `get_task` | Fetch a single task by id, including its comments and subtasks (see below) |
 | `search_tasks` | Search tasks by title/description text (default 25 results, max 100) |
+| `list_my_tasks` | All tasks assigned to the authenticated user as one flat array (open tasks by default; pass `includeCompleted: true` for completed ones too) |
 | `get_current_user` | Return the user the configured API key authenticates as (takes no arguments) |
+
+Every returned task carries an `assignees` array of `{ id, name }` — names are resolved server-side from the Teamwork API's user sideload (`include=users`), so there's no need for a separate name→id lookup. `name` is `null` only if the API didn't include that user in the sideload.
 
 ### `get_task` subtasks
 

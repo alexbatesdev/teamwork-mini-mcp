@@ -95,11 +95,11 @@ async function collectSubtasks(
   for (let level = 1; level <= depth && frontier.length > 0; level++) {
     const childLists = await Promise.all(frontier.map((id) => client.listSubtasks(id)));
     const next: number[] = [];
-    for (const children of childLists) {
+    for (const { tasks: children, users } of childLists) {
       for (const child of children) {
         if (visited.has(child.id)) continue;
         visited.add(child.id);
-        out.push({ ...projectTask(child), depth: level });
+        out.push({ ...projectTask(child, users), depth: level });
         next.push(child.id);
       }
     }
@@ -116,7 +116,7 @@ export function createGetTaskHandler(client: TeamworkClient) {
     const page = input.subtaskPage ?? 1;
     const pageSize = input.subtaskPageSize ?? DEFAULT_SUBTASK_PAGE_SIZE;
 
-    const [raw, commentsResult, allSubtasks] = await Promise.all([
+    const [taskResult, commentsResult, allSubtasks] = await Promise.all([
       client.getTask(input.taskId),
       client.getTaskComments(input.taskId, { limit }),
       collectSubtasks(client, input.taskId, depth),
@@ -132,7 +132,7 @@ export function createGetTaskHandler(client: TeamworkClient) {
     const subtasks = allSubtasks.slice(start, start + pageSize);
 
     return {
-      ...projectTask(raw),
+      ...projectTask(taskResult.task, taskResult.users),
       comments,
       omittedCommentCount: Math.max(0, commentsResult.total - comments.length),
       subtasks,

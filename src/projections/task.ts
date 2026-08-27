@@ -1,3 +1,12 @@
+import type { RawUsersById } from './user.js';
+
+/** An assignee with its name resolved from the response's user sideload. */
+export interface TaskAssignee {
+  id: number;
+  /** "First Last", or null when the user wasn't present in the sideload. */
+  name: string | null;
+}
+
 export interface SlimTask {
   id: number;
   name: string;
@@ -7,7 +16,7 @@ export interface SlimTask {
   progress: number;
   startDate: string | null;
   dueDate: string | null;
-  assigneeUserIds: number[];
+  assignees: TaskAssignee[];
   tagIds: number[] | null;
   parentTaskId: number | null;
   tasklistId: number;
@@ -24,7 +33,7 @@ export interface RawTeamworkTask {
   progress: number;
   startDate: string | null;
   dueDate: string | null;
-  assigneeUserIds: number[];
+  assigneeUserIds: number[] | null;
   tagIds: number[] | null;
   parentTaskId: number;
   tasklistId: number;
@@ -32,7 +41,7 @@ export interface RawTeamworkTask {
   updatedAt: string;
 }
 
-export function projectTask(raw: RawTeamworkTask): SlimTask {
+export function projectTask(raw: RawTeamworkTask, users: RawUsersById = {}): SlimTask {
   return {
     id: raw.id,
     name: raw.name,
@@ -42,7 +51,11 @@ export function projectTask(raw: RawTeamworkTask): SlimTask {
     progress: raw.progress,
     startDate: raw.startDate,
     dueDate: raw.dueDate,
-    assigneeUserIds: raw.assigneeUserIds,
+    assignees: (raw.assigneeUserIds ?? []).map((id) => {
+      const user = users[String(id)];
+      const name = user ? `${user.firstName} ${user.lastName}`.trim() : '';
+      return { id, name: name || null };
+    }),
     tagIds: raw.tagIds,
     parentTaskId: raw.parentTaskId === 0 ? null : raw.parentTaskId,
     tasklistId: raw.tasklistId,
