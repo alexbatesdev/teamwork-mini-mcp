@@ -25,6 +25,10 @@ import {
   createSearchTasksHandler,
   searchTasksInputSchema,
 } from './tools/search-tasks.js';
+import {
+  createStartTaskDevHandler,
+  startTaskDevInputSchema,
+} from './tools/start-task-dev.js';
 
 function requireEnv(name: string): string {
   const v = process.env[name];
@@ -44,6 +48,7 @@ async function main(): Promise<void> {
   const searchTasks = createSearchTasksHandler(client);
   const getCurrentUser = createGetCurrentUserHandler(client);
   const listMyTasks = createListMyTasksHandler(client);
+  const startTaskDev = createStartTaskDevHandler(client);
 
   const asText = (value: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
@@ -104,6 +109,22 @@ async function main(): Promise<void> {
       inputSchema: getCurrentUserInputSchema.shape,
     },
     async (input) => asText(await getCurrentUser(input)),
+  );
+
+  server.registerTool(
+    'start_task_dev',
+    {
+      description:
+        'Move a single Teamwork task forward into its workflow\'s "Dev in Progress" ' +
+        'stage — the ONLY write this server performs. It never accepts a stage id and ' +
+        'can set no other stage, so it cannot complete, merge, close, or delete a task. ' +
+        'It refuses to move a completed task, refuses to move a task backward from a ' +
+        'later stage, and is a no-op if the task is already in "Dev in Progress" or ' +
+        'sits in a workflow without such a stage. Returns { taskId, moved, stage, reason }; ' +
+        'moved is false for every no-op, with reason explaining why.',
+      inputSchema: startTaskDevInputSchema.shape,
+    },
+    async (input) => asText(await startTaskDev(input)),
   );
 
   await server.connect(new StdioServerTransport());

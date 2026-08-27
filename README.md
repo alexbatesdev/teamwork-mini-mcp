@@ -1,6 +1,6 @@
 # teamwork-mini-mcp
 
-A minimal [MCP](https://modelcontextprotocol.io) server for Teamwork Projects. It exposes read-only tools that return data in a slim shape (essential fields only — no permissions, workflow stages, follower lists, etc.) to keep LLM context lean.
+A minimal [MCP](https://modelcontextprotocol.io) server for Teamwork Projects. It exposes mostly read-only tools that return data in a slim shape (essential fields only — no permissions, workflow stages, follower lists, etc.) to keep LLM context lean. The sole write tool is `start_task_dev`, deliberately scoped so it can only nudge a task into its "Dev in Progress" workflow stage and nothing else.
 
 ## Tools
 
@@ -10,8 +10,13 @@ A minimal [MCP](https://modelcontextprotocol.io) server for Teamwork Projects. I
 | `search_tasks` | Search tasks by title/description text (default 25 results, max 100) |
 | `list_my_tasks` | All tasks assigned to the authenticated user as one flat array (open tasks by default; pass `includeCompleted: true` for completed ones too) |
 | `get_current_user` | Return the user the configured API key authenticates as (takes no arguments) |
+| `start_task_dev` | **(write)** Move a task forward into its workflow's "Dev in Progress" stage (see below) |
 
 Every returned task carries an `assignees` array of `{ id, name }` — names are resolved server-side from the Teamwork API's user sideload (`include=users`), so there's no need for a separate name→id lookup. `name` is `null` only if the API didn't include that user in the sideload.
+
+### `start_task_dev`
+
+The one write tool, intentionally narrow. Given `{ taskId }` it moves that task into the **"Dev in Progress"** stage of whatever workflow the task lives in, resolving the stage **by name** from the live workflow (case-insensitive) rather than a hardcoded id. It never accepts a stage id, so it is structurally incapable of completing, merging, closing, or deleting a task, or setting any other stage. It is a no-op (with a `reason`) when the task is already in "Dev in Progress", is completed, sits in a later stage (never moves backward), or is in a workflow with no such stage. Returns `{ taskId, moved, stage, reason }`.
 
 ### `get_task` subtasks
 

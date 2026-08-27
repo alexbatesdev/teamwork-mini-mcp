@@ -20,6 +20,19 @@ export interface TaskListResult {
   users: RawUsersById;
 }
 
+/** A task's placement within a workflow (as returned in `task.workflowStages`). */
+export interface TaskWorkflowStage {
+  /** The stage the task sits in; 0 when it's in the workflow but not yet staged. */
+  stageId: number;
+  workflowId: number;
+}
+
+/** A single workflow stage. */
+export interface WorkflowStage {
+  id: number;
+  name: string;
+}
+
 /** Page size used when walking a paged endpoint to exhaustion. */
 const FULL_WALK_PAGE_SIZE = 250;
 
@@ -148,6 +161,64 @@ export class TeamworkClient {
   async getCurrentUser(): Promise<RawTeamworkPerson> {
     const body = await this.get<{ person: RawTeamworkPerson }>('/projects/api/v3/me.json');
     return body.person;
+  }
+
+  /**
+   * Fetch just a task's base status and its current workflow placement — the
+   * minimum the dev-stage tool needs to decide whether a move is warranted.
+   * `stage` is null when the task sits in no workflow.
+   */
+  async getTaskWorkflowStage(
+    id: number,
+  ): Promise<{ status: string; stage: TaskWorkflowStage | null }> {
+    const body = await this.get<{
+      task: { status: string; workflowStages?: TaskWorkflowStage[] };
+    }>(`/projects/api/v3/tasks/${id}.json?fields[tasks]=id,status,workflowStages`);
+    return { status: body.task.status, stage: body.task.workflowStages?.[0] ?? null };
+  }
+
+  /** List a workflow's stages in display order (first stage first). */
+  async listWorkflowStages(workflowId: number): Promise<WorkflowStage[]> {
+    const body = await this.get<{ stages: WorkflowStage[] }>(
+      `/projects/api/v3/workflows/${workflowId}/stages.json?orderBy=displayorder&orderMode=asc`,
+    );
+    return body.stages ?? [];
+  }
+
+  /**
+   * Move a task to a workflow stage. This is the server's only write; the
+   * API answers 204 No Content on success.
+   */
+  async moveTaskToWorkflowStage(taskId: number, workflowId: number, stageId: number): Promise<void> {
+    await this.sendNoContent(
+      'PATCH',
+      `/projects/api/v3/tasks/${taskId}/workflows/${workflowId}.json`,
+      { stageId },
+    );
+  }
+
+  private async sendNoContent(method: string, path: string, body: unknown): Promise<void> {
+    const url = `${this.baseUrl}${path}`;
+    let res: Response;
+    try {
+      res = await this.fetchFn(url, {
+        method,
+        headers: {
+          Authorization: this.authHeader,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw new Error(`Teamwork request to ${this.baseUrl}${path} failed: ${describeFetchError(err)}`, {
+        cause: err,
+      });
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Teamwork ${res.status} for ${path}: ${text.slice(0, 200)}`);
+    }
   }
 
   private async get<T>(path: string): Promise<T> {

@@ -396,4 +396,61 @@ describe('TeamworkClient', () => {
     const [url] = fetchFn.mock.calls[0]!;
     expect(url).toBe('https://example.teamwork.com/projects/api/v3/me.json');
   });
+
+  it('getTaskWorkflowStage returns the task status and its first workflow stage', async () => {
+    const fetchFn = mockFetch({
+      task: { id: 42, status: 'new', workflowStages: [{ stageId: 0, workflowId: 53311 }] },
+    });
+    const client = new TeamworkClient({ site: 'example.teamwork.com', apiKey: 'k', fetch: fetchFn });
+
+    const result = await client.getTaskWorkflowStage(42);
+
+    expect(result).toEqual({ status: 'new', stage: { stageId: 0, workflowId: 53311 } });
+    const [url] = fetchFn.mock.calls[0]!;
+    expect(new URL(url).origin + new URL(url).pathname).toBe(
+      'https://example.teamwork.com/projects/api/v3/tasks/42.json',
+    );
+  });
+
+  it('getTaskWorkflowStage yields a null stage when the task is in no workflow', async () => {
+    const fetchFn = mockFetch({ task: { id: 42, status: 'new' } });
+    const client = new TeamworkClient({ site: 'example.teamwork.com', apiKey: 'k', fetch: fetchFn });
+
+    expect(await client.getTaskWorkflowStage(42)).toEqual({ status: 'new', stage: null });
+  });
+
+  it('listWorkflowStages GETs the stages endpoint ordered by display order', async () => {
+    const fetchFn = mockFetch({ stages: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }] });
+    const client = new TeamworkClient({ site: 'example.teamwork.com', apiKey: 'k', fetch: fetchFn });
+
+    const stages = await client.listWorkflowStages(53311);
+
+    expect(stages).toEqual([{ id: 1, name: 'A' }, { id: 2, name: 'B' }]);
+    const [url] = fetchFn.mock.calls[0]!;
+    const u = new URL(url);
+    expect(u.origin + u.pathname).toBe(
+      'https://example.teamwork.com/projects/api/v3/workflows/53311/stages.json',
+    );
+    expect(u.searchParams.get('orderBy')).toBe('displayorder');
+  });
+
+  it('moveTaskToWorkflowStage PATCHes the task workflow endpoint with the stage id and accepts 204', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const client = new TeamworkClient({ site: 'example.teamwork.com', apiKey: 'k', fetch: fetchFn });
+
+    await client.moveTaskToWorkflowStage(42, 53311, 200);
+
+    const [url, init] = fetchFn.mock.calls[0]!;
+    expect(url).toBe('https://example.teamwork.com/projects/api/v3/tasks/42/workflows/53311.json');
+    expect(init.method).toBe('PATCH');
+    expect(init.headers['Content-Type']).toBe('application/json');
+    expect(JSON.parse(init.body)).toEqual({ stageId: 200 });
+  });
+
+  it('moveTaskToWorkflowStage throws a useful error on a non-2xx response', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response('nope', { status: 403 }));
+    const client = new TeamworkClient({ site: 'example.teamwork.com', apiKey: 'k', fetch: fetchFn });
+
+    await expect(client.moveTaskToWorkflowStage(42, 53311, 200)).rejects.toThrow(/403/);
+  });
 });
