@@ -453,4 +453,31 @@ describe('TeamworkClient', () => {
 
     await expect(client.moveTaskToWorkflowStage(42, 53311, 200)).rejects.toThrow(/403/);
   });
+
+  it('createTask POSTs a task to the tasklist endpoint and returns id and url', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ task: { id: 77 } }), { status: 201 }),
+    );
+    const client = new TeamworkClient({ site: 'example.teamwork.com', apiKey: 'k', fetch: fetchFn });
+
+    const result = await client.createTask({ tasklistId: 5, name: 'N', description: 'D', assigneeUserId: 9 });
+
+    const [url, init] = fetchFn.mock.calls[0]!;
+    expect(url).toBe('https://example.teamwork.com/projects/api/v3/tasklists/5/tasks.json');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({
+      task: { name: 'N', description: 'D', assignees: { userIds: [9] } },
+    });
+    expect(result).toEqual({ id: 77, url: 'https://example.teamwork.com/app/tasks/77' });
+  });
+
+  it('createTask uses the subtasks endpoint for a parent task and fails when no id comes back', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response('{}', { status: 201 }));
+    const client = new TeamworkClient({ site: 'example.teamwork.com', apiKey: 'k', fetch: fetchFn });
+
+    await expect(client.createTask({ parentTaskId: 42, name: 'N' })).rejects.toThrow(/no task id/);
+    expect(fetchFn.mock.calls[0]![0]).toBe(
+      'https://example.teamwork.com/projects/api/v3/tasks/42/subtasks.json',
+    );
+  });
 });

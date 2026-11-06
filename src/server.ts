@@ -12,6 +12,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { TeamworkClient } from './teamwork/client.js';
+import { createCreateTaskHandler, createTaskInputSchema } from './tools/create-task.js';
 import {
   createGetCurrentUserHandler,
   getCurrentUserInputSchema,
@@ -49,6 +50,7 @@ async function main(): Promise<void> {
   const getCurrentUser = createGetCurrentUserHandler(client);
   const listMyTasks = createListMyTasksHandler(client);
   const startTaskDev = createStartTaskDevHandler(client);
+  const createTask = createCreateTaskHandler(client);
 
   const asText = (value: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
@@ -125,6 +127,19 @@ async function main(): Promise<void> {
       inputSchema: startTaskDevInputSchema.shape,
     },
     async (input) => asText(await startTaskDev(input)),
+  );
+
+  server.registerTool(
+    'create_task',
+    {
+      description:
+        'Create a Teamwork task (give tasklistId) or a subtask (give parentTaskId); exactly ' +
+        'one of the two. Takes a name, optional description and optional assigneeUserId. ' +
+        'Sets no status, stage or completion and never edits existing tasks. ' +
+        'Returns { id, url }.',
+      inputSchema: createTaskInputSchema.innerType().shape,
+    },
+    async (input) => asText(await createTask(input)),
   );
 
   await server.connect(new StdioServerTransport());

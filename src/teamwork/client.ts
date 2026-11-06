@@ -186,7 +186,7 @@ export class TeamworkClient {
   }
 
   /**
-   * Move a task to a workflow stage. This is the server's only write; the
+   * Move a task to a workflow stage. One of the server's writes; the
    * API answers 204 No Content on success.
    */
   async moveTaskToWorkflowStage(taskId: number, workflowId: number, stageId: number): Promise<void> {
@@ -197,7 +197,42 @@ export class TeamworkClient {
     );
   }
 
+  /**
+   * Create a task in a tasklist, or a subtask under `parentTaskId` (which wins
+   * when both are given). Returns the new task's id and its web URL.
+   */
+  async createTask(input: {
+    tasklistId?: number;
+    parentTaskId?: number;
+    name: string;
+    description?: string;
+    assigneeUserId?: number;
+  }): Promise<{ id: number; url: string }> {
+    const task: Record<string, unknown> = { name: input.name };
+    if (input.description !== undefined) task.description = input.description;
+    if (input.assigneeUserId !== undefined) task.assignees = { userIds: [input.assigneeUserId] };
+    const path =
+      input.parentTaskId !== undefined
+        ? `/projects/api/v3/tasks/${input.parentTaskId}/subtasks.json`
+        : `/projects/api/v3/tasklists/${input.tasklistId}/tasks.json`;
+    const res = await this.send('POST', path, { task });
+    const body = (await res.json().catch(() => ({}))) as {
+      task?: { id?: number };
+      id?: number;
+      affected?: { taskIds?: number[] };
+    };
+    const id = body.task?.id ?? body.id ?? body.affected?.taskIds?.[0];
+    if (typeof id !== 'number') {
+      throw new Error(`Teamwork created a task at ${path} but the response carried no task id`);
+    }
+    return { id, url: `${this.baseUrl}/app/tasks/${id}` };
+  }
+
   private async sendNoContent(method: string, path: string, body: unknown): Promise<void> {
+    await this.send(method, path, body);
+  }
+
+  private async send(method: string, path: string, body: unknown): Promise<Response> {
     const url = `${this.baseUrl}${path}`;
     let res: Response;
     try {
@@ -219,6 +254,7 @@ export class TeamworkClient {
       const text = await res.text().catch(() => '');
       throw new Error(`Teamwork ${res.status} for ${path}: ${text.slice(0, 200)}`);
     }
+    return res;
   }
 
   private async get<T>(path: string): Promise<T> {
