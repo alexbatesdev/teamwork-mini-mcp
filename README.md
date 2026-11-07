@@ -17,7 +17,7 @@ Every returned task carries an `assignees` array of `{ id, name }` — names are
 
 ### `start_task_dev`
 
-The one write tool, intentionally narrow. Given `{ taskId }` it moves that task into the **"Dev in Progress"** stage of whatever workflow the task lives in, resolving the stage **by name** from the live workflow (case-insensitive) rather than a hardcoded id. It never accepts a stage id, so it is structurally incapable of completing, merging, closing, or deleting a task, or setting any other stage. It is a no-op (with a `reason`) when the task is already in "Dev in Progress", is completed, sits in a later stage (never moves backward), or is in a workflow with no such stage. Returns `{ taskId, moved, stage, reason }`.
+A write tool, intentionally narrow. Given `{ taskId }` it moves that task into the **"Dev in Progress"** stage of whatever workflow the task lives in, resolving the stage **by name** from the live workflow (case-insensitive) rather than a hardcoded id. It never accepts a stage id, so it is structurally incapable of completing, merging, closing, or deleting a task, or setting any other stage. It is a no-op (with a `reason`) when the task is already in "Dev in Progress", is completed, sits in a later stage (never moves backward), or is in a workflow with no such stage. Returns `{ taskId, moved, stage, reason }`.
 
 ### `get_task` subtasks
 

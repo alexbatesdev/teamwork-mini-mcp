@@ -480,4 +480,20 @@ describe('TeamworkClient', () => {
       'https://example.teamwork.com/projects/api/v3/tasks/42/subtasks.json',
     );
   });
+
+  it('createTask includes the response body in the error when no id is found', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response('{"data":{"newId":5}}', { status: 201 }));
+    const client = new TeamworkClient({ site: 'example.teamwork.com', apiKey: 'k', fetch: fetchFn });
+
+    await expect(client.createTask({ tasklistId: 5, name: 'N' })).rejects.toThrow(/newId/);
+  });
+
+  it('createTask falls back to affected.taskIds[0] when the body has no task id', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ affected: { taskIds: [88] } }), { status: 201 }),
+    );
+    const client = new TeamworkClient({ site: 'example.teamwork.com', apiKey: 'k', fetch: fetchFn });
+
+    expect((await client.createTask({ tasklistId: 5, name: 'N' })).id).toBe(88);
+  });
 });

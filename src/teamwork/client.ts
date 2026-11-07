@@ -216,14 +216,18 @@ export class TeamworkClient {
         ? `/projects/api/v3/tasks/${input.parentTaskId}/subtasks.json`
         : `/projects/api/v3/tasklists/${input.tasklistId}/tasks.json`;
     const res = await this.send('POST', path, { task });
-    const body = (await res.json().catch(() => ({}))) as {
-      task?: { id?: number };
-      id?: number;
-      affected?: { taskIds?: number[] };
-    };
+    const text = await res.text().catch(() => '');
+    let body: { task?: { id?: number }; id?: number; affected?: { taskIds?: number[] } } = {};
+    try {
+      body = JSON.parse(text);
+    } catch {
+      // non-JSON body: falls through to the no-id error below, which quotes it
+    }
     const id = body.task?.id ?? body.id ?? body.affected?.taskIds?.[0];
     if (typeof id !== 'number') {
-      throw new Error(`Teamwork created a task at ${path} but the response carried no task id`);
+      throw new Error(
+        `Teamwork created a task at ${path} but the response carried no task id: ${text.slice(0, 200)}`,
+      );
     }
     return { id, url: `${this.baseUrl}/app/tasks/${id}` };
   }
