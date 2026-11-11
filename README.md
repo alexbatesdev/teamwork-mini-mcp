@@ -1,6 +1,6 @@
 # teamwork-mini-mcp
 
-A minimal [MCP](https://modelcontextprotocol.io) server for Teamwork Projects. It exposes mostly read-only tools that return data in a slim shape (essential fields only — no permissions, workflow stages, follower lists, etc.) to keep LLM context lean. The write tools are narrow: `start_task_dev` can only nudge a task into its "Dev in Progress" workflow stage, and `create_task` only creates new tasks (never edits, completes or closes one).
+A minimal [MCP](https://modelcontextprotocol.io) server for Teamwork Projects. It exposes mostly read-only tools that return data in a slim shape (essential fields only — no permissions, workflow stages, follower lists, etc.) to keep LLM context lean. The only write tool is `start_task_dev`, which can only nudge a task into its "Dev in Progress" workflow stage.
 
 ## Tools
 
@@ -11,7 +11,6 @@ A minimal [MCP](https://modelcontextprotocol.io) server for Teamwork Projects. I
 | `list_my_tasks` | All tasks assigned to the authenticated user as one flat array (open tasks by default; pass `includeCompleted: true` for completed ones too) |
 | `get_current_user` | Return the user the configured API key authenticates as (takes no arguments) |
 | `start_task_dev` | **(write)** Move a task forward into its workflow's "Dev in Progress" stage (see below) |
-| `create_task` | **(write)** Create a task in a tasklist (`tasklistId`) or a subtask (`parentTaskId`) from `name`, optional `description`, optional `assigneeUserId`; returns `{ id, url }` |
 
 Every returned task carries an `assignees` array of `{ id, name }` — names are resolved server-side from the Teamwork API's user sideload (`include=users`), so there's no need for a separate name→id lookup. `name` is `null` only if the API didn't include that user in the sideload.
 
