@@ -496,4 +496,12 @@ describe('TeamworkClient', () => {
 
     expect((await client.createTask({ tasklistId: 5, name: 'N' })).id).toBe(88);
   });
+
+  it('createTask rejects without calling Teamwork when neither tasklistId nor parentTaskId is given', async () => {
+    const fetchFn = vi.fn();
+    const client = new TeamworkClient({ site: 'example.teamwork.com', apiKey: 'k', fetch: fetchFn });
+
+    await expect(client.createTask({ name: 'N' })).rejects.toThrow(/tasklistId or parentTaskId/);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
 });

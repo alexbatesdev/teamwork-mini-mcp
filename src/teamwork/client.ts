@@ -120,9 +120,7 @@ export class TeamworkClient {
   ): Promise<TaskListResult> {
     return this.getAllTaskPages((page) => {
       const params = new URLSearchParams({
-        // The assignee filter param is responsiblePartyIds — verified against
-        // the live API; the documented-sounding assignedToUserIds is silently
-        // ignored (matches Teamwork's own twapi-go-sdk).
+        // Teamwork filters assignees by responsiblePartyIds; assignedToUserIds is ignored.
         responsiblePartyIds: String(userId),
         page: String(page),
         pageSize: String(FULL_WALK_PAGE_SIZE),
@@ -190,7 +188,7 @@ export class TeamworkClient {
    * API answers 204 No Content on success.
    */
   async moveTaskToWorkflowStage(taskId: number, workflowId: number, stageId: number): Promise<void> {
-    await this.sendNoContent(
+    await this.send(
       'PATCH',
       `/projects/api/v3/tasks/${taskId}/workflows/${workflowId}.json`,
       { stageId },
@@ -208,6 +206,9 @@ export class TeamworkClient {
     description?: string;
     assigneeUserId?: number;
   }): Promise<{ id: number; url: string }> {
+    if (input.tasklistId === undefined && input.parentTaskId === undefined) {
+      throw new Error('createTask needs a tasklistId or parentTaskId');
+    }
     const task: Record<string, unknown> = { name: input.name };
     if (input.description !== undefined) task.description = input.description;
     if (input.assigneeUserId !== undefined) task.assignees = { userIds: [input.assigneeUserId] };
@@ -230,10 +231,6 @@ export class TeamworkClient {
       );
     }
     return { id, url: `${this.baseUrl}/app/tasks/${id}` };
-  }
-
-  private async sendNoContent(method: string, path: string, body: unknown): Promise<void> {
-    await this.send(method, path, body);
   }
 
   private async send(method: string, path: string, body: unknown): Promise<Response> {
