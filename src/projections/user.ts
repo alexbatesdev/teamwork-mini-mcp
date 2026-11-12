@@ -16,6 +16,20 @@ export interface SlimUser {
   updatedAt: string;
 }
 
+/**
+ * The shape of entries in a v3 response's `included.users` sideload (requested
+ * with `?include=users`). Only the fields we consume are declared; the API
+ * sends many more.
+ */
+export interface RawSideloadedUser {
+  id: number;
+  firstName: string;
+  lastName: string;
+}
+
+/** `included.users` from a v3 response: user id (as a string key) → user. */
+export type RawUsersById = Record<string, RawSideloadedUser>;
+
 export interface RawTeamworkPerson {
   id: number;
   firstName: string;

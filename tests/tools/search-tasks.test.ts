@@ -20,7 +20,7 @@ function fakeClient(overrides: Partial<TeamworkClient>): TeamworkClient {
 
 describe('search_tasks handler', () => {
   it('calls client.searchTasks with the provided query', async () => {
-    const searchTasks = vi.fn().mockResolvedValue([]);
+    const searchTasks = vi.fn().mockResolvedValue({ tasks: [], users: {} });
     const handler = createSearchTasksHandler(fakeClient({ searchTasks }));
 
     await handler({ query: 'amplitude' });
@@ -29,7 +29,7 @@ describe('search_tasks handler', () => {
   });
 
   it('forwards pageSize when provided', async () => {
-    const searchTasks = vi.fn().mockResolvedValue([]);
+    const searchTasks = vi.fn().mockResolvedValue({ tasks: [], users: {} });
     const handler = createSearchTasksHandler(fakeClient({ searchTasks }));
 
     await handler({ query: 'x', pageSize: 10 });
@@ -38,9 +38,10 @@ describe('search_tasks handler', () => {
   });
 
   it('projects each match to the slim shape', async () => {
-    const searchTasks = vi
-      .fn()
-      .mockResolvedValue([rawTask, { ...rawTask, id: 12, name: 'two' }]);
+    const searchTasks = vi.fn().mockResolvedValue({
+      tasks: [rawTask, { ...rawTask, id: 12, name: 'two' }],
+      users: {},
+    });
     const handler = createSearchTasksHandler(fakeClient({ searchTasks }));
 
     const result = await handler({ query: 'x' });
@@ -49,6 +50,18 @@ describe('search_tasks handler', () => {
     expect(result[0]!.id).toBe(rawTask.id);
     expect(result[1]!.id).toBe(12);
     expect(result[0]).not.toHaveProperty('userPermissions');
+  });
+
+  it('resolves assignee names from the sideloaded users', async () => {
+    const searchTasks = vi.fn().mockResolvedValue({
+      tasks: [rawTask],
+      users: { '643631': { id: 643631, firstName: 'Alex', lastName: 'Bates' } },
+    });
+    const handler = createSearchTasksHandler(fakeClient({ searchTasks }));
+
+    const result = await handler({ query: 'x' });
+
+    expect(result[0]!.assignees).toEqual([{ id: 643631, name: 'Alex Bates' }]);
   });
 });
 

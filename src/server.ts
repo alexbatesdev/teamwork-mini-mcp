@@ -18,9 +18,17 @@ import {
 } from './tools/get-current-user.js';
 import { createGetTaskHandler, getTaskInputSchema } from './tools/get-task.js';
 import {
+  createListMyTasksHandler,
+  listMyTasksInputSchema,
+} from './tools/list-my-tasks.js';
+import {
   createSearchTasksHandler,
   searchTasksInputSchema,
 } from './tools/search-tasks.js';
+import {
+  createStartTaskDevHandler,
+  startTaskDevInputSchema,
+} from './tools/start-task-dev.js';
 
 function requireEnv(name: string): string {
   const v = process.env[name];
@@ -39,6 +47,8 @@ async function main(): Promise<void> {
   const getTask = createGetTaskHandler(client);
   const searchTasks = createSearchTasksHandler(client);
   const getCurrentUser = createGetCurrentUserHandler(client);
+  const listMyTasks = createListMyTasksHandler(client);
+  const startTaskDev = createStartTaskDevHandler(client);
 
   const asText = (value: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
@@ -57,7 +67,8 @@ async function main(): Promise<void> {
         'carrying parentTaskId so the tree can be rebuilt. The list is paginated via ' +
         'subtaskPageSize (default 20, max 200) and subtaskPage (1-based); the subtaskPage ' +
         'metadata reports total/returned/hasMore. Returns only the essential task fields ' +
-        '(no permissions, workflow stages, follower lists, etc.) to keep context lean.',
+        '(no permissions, workflow stages, follower lists, etc.) to keep context lean; ' +
+        'assignees carry both the user id and resolved display name.',
       inputSchema: getTaskInputSchema.shape,
     },
     async (input) => asText(await getTask(input)),
@@ -67,10 +78,25 @@ async function main(): Promise<void> {
     'search_tasks',
     {
       description:
-        'Search Teamwork tasks whose title or description contains the given text. Returns up to pageSize (default 25, max 100) tasks in the slim shape.',
+        'Search Teamwork tasks whose title or description contains the given text. ' +
+        'Returns up to pageSize (default 25, max 100) tasks in the slim shape; each ' +
+        'task\'s assignees carry both the user id and resolved display name.',
       inputSchema: searchTasksInputSchema.shape,
     },
     async (input) => asText(await searchTasks(input)),
+  );
+
+  server.registerTool(
+    'list_my_tasks',
+    {
+      description:
+        'List every Teamwork task assigned to the authenticated user (the "me" ' +
+        'identity of the configured API key), walking all pages and returning a ' +
+        'single flat array in the slim shape. Open tasks only by default; set ' +
+        'includeCompleted to true to include completed tasks as well.',
+      inputSchema: listMyTasksInputSchema.shape,
+    },
+    async (input) => asText(await listMyTasks(input)),
   );
 
   server.registerTool(
@@ -83,6 +109,22 @@ async function main(): Promise<void> {
       inputSchema: getCurrentUserInputSchema.shape,
     },
     async (input) => asText(await getCurrentUser(input)),
+  );
+
+  server.registerTool(
+    'start_task_dev',
+    {
+      description:
+        'Move a single Teamwork task forward into its workflow\'s "Dev in Progress" ' +
+        'stage — the ONLY write this server performs. It never accepts a stage id and ' +
+        'can set no other stage, so it cannot complete, merge, close, or delete a task. ' +
+        'It refuses to move a completed task, refuses to move a task backward from a ' +
+        'later stage, and is a no-op if the task is already in "Dev in Progress" or ' +
+        'sits in a workflow without such a stage. Returns { taskId, moved, stage, reason }; ' +
+        'moved is false for every no-op, with reason explaining why.',
+      inputSchema: startTaskDevInputSchema.shape,
+    },
+    async (input) => asText(await startTaskDev(input)),
   );
 
   await server.connect(new StdioServerTransport());

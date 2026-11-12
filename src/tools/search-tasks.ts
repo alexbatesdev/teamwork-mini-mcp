@@ -12,7 +12,9 @@ export type SearchTasksInput = z.infer<typeof searchTasksInputSchema>;
 
 export function createSearchTasksHandler(client: TeamworkClient) {
   return async (input: SearchTasksInput): Promise<SlimTask[]> => {
-    const raw = await client.searchTasks(input.query, { pageSize: input.pageSize });
-    return raw.map(projectTask);
+    const { tasks, users } = await client.searchTasks(input.query, {
+      pageSize: input.pageSize,
+    });
+    return tasks.map((task) => projectTask(task, users));
   };
 }

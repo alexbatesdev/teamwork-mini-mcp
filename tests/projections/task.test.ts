@@ -15,7 +15,7 @@ const subtasksFixture = JSON.parse(
 );
 
 const EXPECTED_SLIM_KEYS = [
-  'assigneeUserIds',
+  'assignees',
   'createdAt',
   'description',
   'dueDate',
@@ -47,7 +47,7 @@ describe('projectTask', () => {
     expect(slim.progress).toBe(0);
     expect(slim.startDate).toBeNull();
     expect(slim.dueDate).toBeNull();
-    expect(slim.assigneeUserIds).toEqual([643631]);
+    expect(slim.assignees).toEqual([{ id: 643631, name: null }]);
     expect(slim.tagIds).toEqual([178467, 126560]);
     expect(slim.tasklistId).toBe(2521973);
     expect(slim.createdAt).toBe('2026-03-17T20:04:52Z');
@@ -69,5 +69,30 @@ describe('projectTask', () => {
   it('keeps an arbitrary non-zero parentTaskId as-is', () => {
     const slim = projectTask({ ...taskFixture.task, parentTaskId: 12345 });
     expect(slim.parentTaskId).toBe(12345);
+  });
+
+  it('resolves assignee names from a sideloaded users map', () => {
+    const users = {
+      '643631': { id: 643631, firstName: 'Alex', lastName: 'Bates' },
+    };
+    const slim = projectTask(taskFixture.task, users);
+    expect(slim.assignees).toEqual([{ id: 643631, name: 'Alex Bates' }]);
+  });
+
+  it('leaves name null for assignees missing from the users map', () => {
+    const users = {
+      '643631': { id: 643631, firstName: 'Alex', lastName: 'Bates' },
+    };
+    const raw = { ...taskFixture.task, assigneeUserIds: [643631, 999] };
+    const slim = projectTask(raw, users);
+    expect(slim.assignees).toEqual([
+      { id: 643631, name: 'Alex Bates' },
+      { id: 999, name: null },
+    ]);
+  });
+
+  it('returns no assignees when assigneeUserIds is null', () => {
+    const slim = projectTask({ ...taskFixture.task, assigneeUserIds: null });
+    expect(slim.assignees).toEqual([]);
   });
 });

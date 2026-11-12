@@ -1,12 +1,40 @@
 import type { RawTeamworkComment } from '../projections/comment.js';
 import type { RawTeamworkTask } from '../projections/task.js';
-import type { RawTeamworkPerson } from '../projections/user.js';
+import type { RawTeamworkPerson, RawUsersById } from '../projections/user.js';
 
 export interface TeamworkClientOptions {
   site: string;
   apiKey: string;
   fetch?: typeof globalThis.fetch;
 }
+
+/** A task plus the users sideloaded with it (for resolving assignee names). */
+export interface TaskResult {
+  task: RawTeamworkTask;
+  users: RawUsersById;
+}
+
+/** A list of tasks plus the users sideloaded with them. */
+export interface TaskListResult {
+  tasks: RawTeamworkTask[];
+  users: RawUsersById;
+}
+
+/** A task's placement within a workflow (as returned in `task.workflowStages`). */
+export interface TaskWorkflowStage {
+  /** The stage the task sits in; 0 when it's in the workflow but not yet staged. */
+  stageId: number;
+  workflowId: number;
+}
+
+/** A single workflow stage. */
+export interface WorkflowStage {
+  id: number;
+  name: string;
+}
+
+/** Page size used when walking a paged endpoint to exhaustion. */
+const FULL_WALK_PAGE_SIZE = 250;
 
 export class TeamworkClient {
   private readonly baseUrl: string;
@@ -19,9 +47,12 @@ export class TeamworkClient {
     this.fetchFn = opts.fetch ?? globalThis.fetch;
   }
 
-  async getTask(id: number): Promise<RawTeamworkTask> {
-    const body = await this.get<{ task: RawTeamworkTask }>(`/projects/api/v3/tasks/${id}.json`);
-    return body.task;
+  async getTask(id: number): Promise<TaskResult> {
+    const body = await this.get<{
+      task: RawTeamworkTask;
+      included?: { users?: RawUsersById };
+    }>(`/projects/api/v3/tasks/${id}.json?include=users`);
+    return { task: body.task, users: body.included?.users ?? {} };
   }
 
   /**
@@ -51,45 +82,180 @@ export class TeamworkClient {
    * paged, so we walk pages (largest page size we use anywhere) until exhausted
    * to return the complete set — callers higher up depend on an accurate count.
    */
-  async listSubtasks(id: number): Promise<RawTeamworkTask[]> {
-    const pageSize = 250;
-    const all: RawTeamworkTask[] = [];
-    for (let page = 1; ; page++) {
+  async listSubtasks(id: number): Promise<TaskListResult> {
+    return this.getAllTaskPages((page) => {
       const params = new URLSearchParams({
         page: String(page),
-        pageSize: String(pageSize),
+        pageSize: String(FULL_WALK_PAGE_SIZE),
+        include: 'users',
       });
-      const body = await this.get<{
-        tasks: RawTeamworkTask[];
-        meta?: { page?: { hasMore?: boolean } };
-      }>(`/projects/api/v3/tasks/${id}/subtasks.json?${params.toString()}`);
-      const tasks = body.tasks ?? [];
-      all.push(...tasks);
-      // Stop on an explicit hasMore=false, or when the page wasn't full.
-      const hasMore = body.meta?.page?.hasMore;
-      if (hasMore === false || tasks.length < pageSize) break;
-    }
-    return all;
+      return `/projects/api/v3/tasks/${id}/subtasks.json?${params.toString()}`;
+    });
   }
 
   async searchTasks(
     query: string,
     opts: { pageSize?: number } = {},
-  ): Promise<RawTeamworkTask[]> {
+  ): Promise<TaskListResult> {
     const params = new URLSearchParams({
       searchTerm: query,
       pageSize: String(opts.pageSize ?? 25),
+      include: 'users',
     });
-    const body = await this.get<{ tasks: RawTeamworkTask[] }>(
-      `/projects/api/v3/tasks.json?${params.toString()}`,
-    );
-    return body.tasks;
+    const body = await this.get<{
+      tasks: RawTeamworkTask[];
+      included?: { users?: RawUsersById };
+    }>(`/projects/api/v3/tasks.json?${params.toString()}`);
+    return { tasks: body.tasks, users: body.included?.users ?? {} };
+  }
+
+  /**
+   * Fetch every task assigned to `userId`, walking pages until exhausted so
+   * the result is the complete flat set. Completed tasks are excluded unless
+   * `includeCompleted` is set (matching the API's default).
+   */
+  async listTasksAssignedTo(
+    userId: number,
+    opts: { includeCompleted?: boolean } = {},
+  ): Promise<TaskListResult> {
+    return this.getAllTaskPages((page) => {
+      const params = new URLSearchParams({
+        // Teamwork filters assignees by responsiblePartyIds; assignedToUserIds is ignored.
+        responsiblePartyIds: String(userId),
+        page: String(page),
+        pageSize: String(FULL_WALK_PAGE_SIZE),
+        include: 'users',
+      });
+      if (opts.includeCompleted) params.set('includeCompletedTasks', 'true');
+      return `/projects/api/v3/tasks.json?${params.toString()}`;
+    });
+  }
+
+  /**
+   * Walk a paged v3 tasks endpoint until exhausted, concatenating tasks and
+   * merging each page's `included.users` sideload — callers higher up depend
+   * on an accurate, complete set.
+   */
+  private async getAllTaskPages(pathForPage: (page: number) => string): Promise<TaskListResult> {
+    const all: RawTeamworkTask[] = [];
+    const users: RawUsersById = {};
+    for (let page = 1; ; page++) {
+      const body = await this.get<{
+        tasks: RawTeamworkTask[];
+        included?: { users?: RawUsersById };
+        meta?: { page?: { hasMore?: boolean } };
+      }>(pathForPage(page));
+      const tasks = body.tasks ?? [];
+      all.push(...tasks);
+      Object.assign(users, body.included?.users);
+      // Stop on an explicit hasMore=false, or when the page wasn't full.
+      const hasMore = body.meta?.page?.hasMore;
+      if (hasMore === false || tasks.length < FULL_WALK_PAGE_SIZE) break;
+    }
+    return { tasks: all, users };
   }
 
   /** Fetch the user the API key authenticates as. */
   async getCurrentUser(): Promise<RawTeamworkPerson> {
     const body = await this.get<{ person: RawTeamworkPerson }>('/projects/api/v3/me.json');
     return body.person;
+  }
+
+  /**
+   * Fetch just a task's base status and its current workflow placement — the
+   * minimum the dev-stage tool needs to decide whether a move is warranted.
+   * `stage` is null when the task sits in no workflow.
+   */
+  async getTaskWorkflowStage(
+    id: number,
+  ): Promise<{ status: string; stage: TaskWorkflowStage | null }> {
+    const body = await this.get<{
+      task: { status: string; workflowStages?: TaskWorkflowStage[] };
+    }>(`/projects/api/v3/tasks/${id}.json?fields[tasks]=id,status,workflowStages`);
+    return { status: body.task.status, stage: body.task.workflowStages?.[0] ?? null };
+  }
+
+  /** List a workflow's stages in display order (first stage first). */
+  async listWorkflowStages(workflowId: number): Promise<WorkflowStage[]> {
+    const body = await this.get<{ stages: WorkflowStage[] }>(
+      `/projects/api/v3/workflows/${workflowId}/stages.json?orderBy=displayorder&orderMode=asc`,
+    );
+    return body.stages ?? [];
+  }
+
+  /**
+   * Move a task to a workflow stage. One of the server's writes; the
+   * API answers 204 No Content on success.
+   */
+  async moveTaskToWorkflowStage(taskId: number, workflowId: number, stageId: number): Promise<void> {
+    await this.send(
+      'PATCH',
+      `/projects/api/v3/tasks/${taskId}/workflows/${workflowId}.json`,
+      { stageId },
+    );
+  }
+
+  /**
+   * Create a task in a tasklist, or a subtask under `parentTaskId` (which wins
+   * when both are given). Returns the new task's id and its web URL.
+   */
+  async createTask(input: {
+    tasklistId?: number;
+    parentTaskId?: number;
+    name: string;
+    description?: string;
+    assigneeUserId?: number;
+  }): Promise<{ id: number; url: string }> {
+    if (input.tasklistId === undefined && input.parentTaskId === undefined) {
+      throw new Error('createTask needs a tasklistId or parentTaskId');
+    }
+    const task: Record<string, unknown> = { name: input.name };
+    if (input.description !== undefined) task.description = input.description;
+    if (input.assigneeUserId !== undefined) task.assignees = { userIds: [input.assigneeUserId] };
+    const path =
+      input.parentTaskId !== undefined
+        ? `/projects/api/v3/tasks/${input.parentTaskId}/subtasks.json`
+        : `/projects/api/v3/tasklists/${input.tasklistId}/tasks.json`;
+    const res = await this.send('POST', path, { task });
+    const text = await res.text().catch(() => '');
+    let body: { task?: { id?: number }; id?: number; affected?: { taskIds?: number[] } } = {};
+    try {
+      body = JSON.parse(text);
+    } catch {
+      // non-JSON body: falls through to the no-id error below, which quotes it
+    }
+    const id = body.task?.id ?? body.id ?? body.affected?.taskIds?.[0];
+    if (typeof id !== 'number') {
+      throw new Error(
+        `Teamwork created a task at ${path} but the response carried no task id: ${text.slice(0, 200)}`,
+      );
+    }
+    return { id, url: `${this.baseUrl}/app/tasks/${id}` };
+  }
+
+  private async send(method: string, path: string, body: unknown): Promise<Response> {
+    const url = `${this.baseUrl}${path}`;
+    let res: Response;
+    try {
+      res = await this.fetchFn(url, {
+        method,
+        headers: {
+          Authorization: this.authHeader,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw new Error(`Teamwork request to ${this.baseUrl}${path} failed: ${describeFetchError(err)}`, {
+        cause: err,
+      });
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Teamwork ${res.status} for ${path}: ${text.slice(0, 200)}`);
+    }
+    return res;
   }
 
   private async get<T>(path: string): Promise<T> {
